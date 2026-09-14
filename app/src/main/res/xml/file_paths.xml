@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- app/src/main/res/xml/file_paths.xml -->
+<paths>
+    <!-- Whitelist path for sharing JSON database files -->
+    <external-files-path name="backup_files" path="RoboQwenBackups" />
+</paths>
