@@ -14,7 +14,7 @@ if ! pgrep -x "ollama" > /dev/null; then
     sleep 3
 fi
 
-echo "=== 2. Configuring Environment & LangSmith Tracing ==="
+echo "=== 2. Configuring Environment & Dependencies ==="
 if command -v firewall-cmd &> /dev/null; then
     sudo firewall-cmd --add-port=${PORT_SERVER}/tcp --permanent >/dev/null 2>&1 || true
     sudo firewall-cmd --reload >/dev/null 2>&1 || true
@@ -25,7 +25,6 @@ if [ ! -d "venv" ]; then
 fi
 source venv/bin/activate
 
-# Install LangChain, LangGraph, and Ollama integration packages
 pip install --quiet fastapi uvicorn requests langchain langchain-ollama langgraph langsmith
 
 cat << 'PYEOF' > server.py
@@ -39,28 +38,19 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_ollama import ChatOllama
 from langgraph.graph import StateGraph, END
 
-# --- Optional: Enable LangSmith Tracing ---
-# Set these env variables in your terminal if you want web dashboard tracing:
-# os.environ["LANGCHAIN_TRACING_V2"] = "true"
-# os.environ["LANGCHAIN_API_KEY"] = "ls__your_api_key_here"
-# os.environ["LANGCHAIN_PROJECT"] = "Robo-Qwen-OS"
-
 app = FastAPI()
 
-# 1. Initialize LangChain LLM Node
 llm = ChatOllama(
     model="qwen2.5-coder:7b",
     base_url="http://127.0.0.1:11434",
     temperature=0.3
 )
 
-# 2. Define LangGraph Agent State
 class AgentState(TypedDict):
     messages: Sequence[BaseMessage]
     next_action: str
     final_response: str
 
-# 3. Define State Graph Nodes
 def router_node(state: AgentState) -> AgentState:
     last_msg = state["messages"][-1].content.lower()
     
@@ -102,7 +92,6 @@ def conditional_edge(state: AgentState):
         return "llm"
     return END
 
-# 4. Build LangGraph Workflow
 workflow = StateGraph(AgentState)
 workflow.add_node("router", router_node)
 workflow.add_node("llm", llm_node)
@@ -122,7 +111,6 @@ def chat(req: QueryRequest):
         user_prompt = req.prompt.strip()
         print(f"\n[LangGraph Engine] Processing Input: '{user_prompt}'")
 
-        # Execute Graph Cycle
         initial_state = {
             "messages": [HumanMessage(content=user_prompt)],
             "next_action": "",
@@ -146,10 +134,26 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 PYEOF
 
+# Forcefully free port 8000 and wait for the OS socket to clear
+if ss -tlnp 2>/dev/null | grep -q ":${PORT_SERVER} "; then
+    echo "=== 3. Freeing Port ${PORT_SERVER} (Stopping previous instance) ==="
+    sudo fuser -k -9 ${PORT_SERVER}/tcp || true
+    sleep 2  # Give the Linux kernel time to release the socket binding
+fi
+
 LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7}')
 echo "--------------------------------------------------------"
 echo "🤖 RoboQwen LangGraph Backend Active!"
 echo "Target Endpoint: http://${LOCAL_IP}:${PORT_SERVER}/chat"
 echo "--------------------------------------------------------"
+
+# --- 4. Setup Android ADB Reverse Tunnel ---
+if command -v adb &> /dev/null && adb devices | grep -q "device$"; then
+    echo "=== 4. Configuring Android ADB Reverse Tunnel ==="
+    adb reverse tcp:${PORT_SERVER} tcp:${PORT_SERVER}
+    echo "ADB tunnel active: localhost:${PORT_SERVER} <-> Android device"
+else
+    echo "=== 4. Skipping ADB tunnel (No active device detected) ==="
+fi
 
 python3 server.py
