@@ -13,7 +13,7 @@ class YoutubeExtractor {
     suspend fun extractAudioUrl(searchQuery: String): Pair<String, String>? = withContext(Dispatchers.IO) {  
         try {  
             val encodedQuery = java.net.URLEncoder.encode(searchQuery, "UTF-8")  
-            val connection = URL("https://youtube.com").openConnection() as HttpURLConnection  
+            val connection = URL("https://www.youtube.com/results?search_query=$encodedQuery").openConnection() as HttpURLConnection  
             connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")  
               
             val html = connection.inputStream.bufferedReader().use { it.readText() }  
